@@ -12,7 +12,7 @@ from io import BytesIO
 
 server_address = "ws://boiling-caverns-15454.herokuapp.com:80"
 
-update_freq = .5
+update_freq = 1.0/60.0
 
 new_connection = bytes([0x0])
 disconnect = bytes([0x5])
@@ -54,8 +54,36 @@ class ServerAccess (threading.Thread):
 		self.has_setup = False
 		self.should_terminate = False
 		self.tanks_data = {}
-		self.update()
 		
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop(loop)
+		loop.run_until_complete(self.action())
+	
+	async def action(self):
+		async with websockets.connect(self.address) as websocket:
+			
+			# make server connection & get id
+			await websocket.send(new_connection)
+			self.id_num = decid(await websocket.recv())
+			
+			# send/get data
+			while True:
+				d = dict(nickname = "xander", position = (game.tanks[0].position.x, game.tanks[0].position.y), arm_angle = game.tanks[0].arm_angle, color = game.tanks[0].color, model = "original")
+				message = encid(self.id_num) + send_info + encode(d)
+				await websocket.send(message)
+				await websocket.send(encid(self.id_num) + get_update)
+				tankdata = decode(await websocket.recv())
+				del tankdata[self.id_num]
+				for idnum, tank in tankdata.items():
+					if idnum in self.tanks_data:
+						for name, attr in tank.items():
+								self.tanks_data[idnum][name] = attr
+					else:
+						self.tanks_data[idnum] = tank
+				if self.should_terminate:
+					break
+	def stop(self):
+		self.should_terminate = True
 	def update(self):
 		if hasattr(game, "tanks"):
 			if not self.has_setup:
@@ -80,12 +108,7 @@ class ServerAccess (threading.Thread):
 			return
 		t = threading.Timer(update_freq, self.update)
 		t.start()
-		
-	def stop(self):
-		self.should_terminate = True
-	def cleanup(self):
-		self.send(encid(self.id_num) + disconnect)
-	
+
 	async def sendcoro(self, data):
 		async with websockets.connect(self.address) as websocket:
 			await websocket.send(data)
@@ -275,6 +298,9 @@ class Tanks (Scene):
 		self.buttons = [self.firebutton]
 		
 		self.finished = True
+		
+		access.start() # connects to server and stuff
+
 	def draw(self):
 		if not hasattr(self, "finished"):
 			return
@@ -317,9 +343,13 @@ class Tanks (Scene):
 		tanks = []
 		if hasattr(access, "tanks_data"):
 			for idnum, info in access.tanks_data.items():
-				t = Tank(info["position"], info["color"], info["nickname"], self)
-				t.arm_angle = info["arm_angle"]
-				tanks.append(t)
+				if "position" in info and "color" in info and "nickname" in info and "arm_angle" in info:
+					t = Tank(info["position"], info["color"], info["nickname"], self)
+					t.arm_angle = info["arm_angle"]
+					t.position = Point(t.position[0], t.position[1])
+					tanks.append(t)
+		for t in tanks:
+			t.draw()
 		
 		# sun
 		use_shader(self.sunshader)
@@ -373,5 +403,4 @@ class Tanks (Scene):
 game = Tanks()
 access = ServerAccess()
 access.daemon = True
-access.start()
 run(game, show_fps = True)
