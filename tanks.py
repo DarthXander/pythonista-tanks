@@ -12,7 +12,7 @@ from io import BytesIO
 
 server_address = "ws://boiling-caverns-15454.herokuapp.com:80"
 
-update_freq = 1.0/60.0
+update_freq = 1.0
 
 new_connection = bytes([0x0])
 disconnect = bytes([0x5])
@@ -50,7 +50,6 @@ class ServerAccess (threading.Thread):
 	def run(self):
 		self.address = server_address
 		self.loop = asyncio.new_event_loop()
-		self.id_num = decid(self.sendrecv(new_connection))
 		self.has_setup = False
 		self.should_terminate = False
 		self.tanks_data = {}
@@ -81,6 +80,7 @@ class ServerAccess (threading.Thread):
 					else:
 						self.tanks_data[idnum] = tank
 				if self.should_terminate:
+					await websocket.send(encid(self.id_num) + disconnect)
 					break
 	def stop(self):
 		self.should_terminate = True
