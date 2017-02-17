@@ -8,11 +8,12 @@ import websockets
 import threading
 import pickle
 import struct
+import time
 from io import BytesIO
 
 server_address = "ws://boiling-caverns-15454.herokuapp.com:80"
 
-update_freq = 1.0
+update_freq = 1.0/20.0
 
 new_connection = bytes([0x0])
 disconnect = bytes([0x5])
@@ -70,7 +71,7 @@ class ServerAccess (threading.Thread):
 				d = dict(nickname = "xander", position = (game.tanks[0].position.x, game.tanks[0].position.y), arm_angle = game.tanks[0].arm_angle, color = game.tanks[0].color, model = "original")
 				message = encid(self.id_num) + send_info + encode(d)
 				await websocket.send(message)
-				await websocket.send(encid(self.id_num) + get_update)
+				await websocket.send(encid(self.id_num) + get_all)
 				tankdata = decode(await websocket.recv())
 				del tankdata[self.id_num]
 				for idnum, tank in tankdata.items():
@@ -82,6 +83,7 @@ class ServerAccess (threading.Thread):
 				if self.should_terminate:
 					await websocket.send(encid(self.id_num) + disconnect)
 					break
+				time.sleep(update_freq)
 	def stop(self):
 		self.should_terminate = True
 	def update(self):
@@ -341,6 +343,8 @@ class Tanks (Scene):
 			tank.draw()
 		
 		tanks = []
+		#print("number of tanks: {}".format(len(access.tanks_data) + 1))
+		#print("data: {!r}".format(access.tanks_data))
 		if hasattr(access, "tanks_data"):
 			for idnum, info in access.tanks_data.items():
 				if "position" in info and "color" in info and "nickname" in info and "arm_angle" in info:
